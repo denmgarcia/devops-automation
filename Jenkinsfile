@@ -1,39 +1,70 @@
 pipeline {
-    agent any
-    tools{
-        maven 'maven_3_5_0'
+  agent any
+  stages {
+    stage('Unit Test') {
+      steps {
+        sh 'mvn clean test'
+      }
     }
-    stages{
-        stage('Build Maven'){
-            steps{
-                checkout([$class: 'GitSCM', branches: [[name: '*/main']], extensions: [], userRemoteConfigs: [[url: 'https://github.com/Java-Techie-jt/devops-automation']]])
-                sh 'mvn clean install'
-            }
-        }
-        stage('Build docker image'){
-            steps{
-                script{
-                    sh 'docker build -t javatechie/devops-integration .'
-                }
-            }
-        }
-        stage('Push image to Hub'){
-            steps{
-                script{
-                   withCredentials([string(credentialsId: 'dockerhub-pwd', variable: 'dockerhubpwd')]) {
-                   sh 'docker login -u javatechie -p ${dockerhubpwd}'
-
+    stage('Deploy Standalone') {
+      steps {
+        sh 'mvn deploy -P standalone'
+      }
+    }
+    stage('Deploy AnyPoint') {
+      environment {
+        ANYPOINT_CREDENTIALS = credentials('anypoint.credentials')
+      }
+      steps {
+        sh 'mvn deploy -P arm -Darm.target.name=local-4.0.0-ee -Danypoint.username=${ANYPOINT_CREDENTIALS_USR}  -Danypoint.password=${ANYPOINT_CREDENTIALS_PSW}'
+      }
+    }
+    stage('Deploy CloudHub') {
+      environment {
+        ANYPOINT_CREDENTIALS = credentials('anypoint.credentials')
+      }
+      steps {
+        sh 'mvn deploy -P cloudhub -Dmule.version=4.0.0 -Danypoint.username=${ANYPOINT_CREDENTIALS_USR} -Danypoint.password=${ANYPOINT_CREDENTIALS_PSW}'
+      }
+    }
+  }
 }
-                   sh 'docker push javatechie/devops-integration'
-                }
-            }
-        }
-        stage('Deploy to k8s'){
-            steps{
-                script{
-                    kubernetesDeploy (configs: 'deploymentservice.yaml',kubeconfigId: 'k8sconfigpwd')
-                }
-            }
-        }
+pipeline {
+  agent any
+  tools {
+    maven 'maven'
+  }
+  stages {
+    stage("Build Maven") {
+      steps {
+        checkout scmGit(branches: [
+          [name: '*/main']
+        ], extensions: [], userRemoteConfigs: [
+          [url: 'https://github.com/denmgarcia/devops-automation']
+        ])
+        sh 'mvn clean install'
+      }
     }
+    stage("Build Docker images") {
+      steps {
+        script {
+          sh 'docker build -t cyborden/devops-integration .'
+        }
+      }
+    }
+    stage("Pushing Docker images to HUB...") {
+      steps {
+        script {
+          withCredentials([string(credentialsId: 'dockerhub-pwd2', variable: 'dockerhubpwd')]) {
+            sh 'docker login -u cyborden -p ${dockerhubpwd}'
+
+            sh 'docker push cyborden/devops-integration'
+          }
+
+        }
+      }
+    }
+
+  }
+
 }
